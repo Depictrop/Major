@@ -2,14 +2,8 @@ import os
 import cv2
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Flatten
-from tensorflow.keras.applications import VGG19
-from tensorflow.keras.optimizers import Adam
 
-# Function to load and preprocess data
-def load_and_preprocess_data(directory_path, target_shape=(224, 224)):
+def load_and_preprocess_data(directory_path, target_shape=(1024, 1024)):
     images = []
     labels = []
 
@@ -26,45 +20,38 @@ def load_and_preprocess_data(directory_path, target_shape=(224, 224)):
                 images.append(image)
                 labels.append(label)
 
-    # Convert lists to NumPy arrays
     images_array = np.array(images)
     labels_array = np.array(labels)
 
     return images_array, labels_array
 
-# Define paths and other parameters
+
 data_directory = 'C:\\Users\\dheer\\Desktop\\Folder Handler\\Major\\Required Features'
+train_directory = 'C:\\Users\\dheer\\Desktop\\Folder Handler\\Major\\train'
+val_directory = 'C:\\Users\\dheer\\Desktop\\Folder Handler\\Major\\val'
+test_directory = 'C:\\Users\\dheer\\Desktop\\Folder Handler\\Major\\test'
 val_split = 0.2
 test_split = 0.1
 
-# Load and preprocess data
+
 images_array, labels_array = load_and_preprocess_data(data_directory)
 
-# Split the data using train_test_split
 X_train, X_temp, y_train, y_temp = train_test_split(images_array, labels_array, test_size=val_split + test_split, random_state=42)
 X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=test_split/(val_split + test_split), random_state=42)
 
-# Convert string labels to numeric labels using LabelEncoder
-label_encoder = LabelEncoder()
-y_train_encoded = label_encoder.fit_transform(y_train)
-y_val_encoded = label_encoder.transform(y_val)
 
-# Load VGG19 model pretrained on ImageNet
-base_model = VGG19(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+def save_to_directory(images, labels, directory):
+    for label in np.unique(labels):
+        label_indices = np.where(labels == label)[0]
+        for idx in label_indices:
+            image = images[idx]
+            label_directory = os.path.join(directory, label)
+            os.makedirs(label_directory, exist_ok=True)
+            cv2.imwrite(os.path.join(label_directory, f"{idx}.jpg"), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
 
-# Create a new model on top
-model = Sequential()
-model.add(base_model)
-model.add(Flatten())
-model.add(Dense(512, activation='relu'))
-model.add(Dense(len(label_encoder.classes_), activation='softmax'))  # Output layer
 
-# Compile the model
-model.compile(optimizer=Adam(), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+save_to_directory(X_train, y_train, train_directory)
+save_to_directory(X_val, y_val, val_directory)
+save_to_directory(X_test, y_test, test_directory)
 
-# Train the model
-model.fit(X_train, y_train_encoded, epochs=10, validation_data=(X_val, y_val_encoded))
-
-# Evaluate the model
-loss, accuracy = model.evaluate(X_test, label_encoder.transform(y_test))
-print(f"Test Accuracy: {accuracy * 100:.2f}%")
+print("Data split and saved to directories successfully!")
