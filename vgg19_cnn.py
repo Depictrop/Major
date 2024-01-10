@@ -1,84 +1,70 @@
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import os
+import cv2
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Flatten
 from tensorflow.keras.applications import VGG19
-from tensorflow.keras import models, layers
+from tensorflow.keras.optimizers import Adam
 
-# Define paths
-train_directory = 'C:\\Users\\dheer\\Desktop\\Folder Handler\\Major\\train'
-val_directory = 'C:\\Users\\dheer\\Desktop\\Folder Handler\\Major\\val'
-test_directory = 'C:\\Users\\dheer\\Desktop\\Folder Handler\\Major\\test'
 
-# Data augmentation using ImageDataGenerator
-train_datagen = ImageDataGenerator(
-    rotation_range=20,
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    shear_range=0.2,
-    zoom_range=0.2,
-    horizontal_flip=True,
-    fill_mode='nearest'
-)
+def load_and_preprocess_data(directory_path, target_shape=(224, 224)):
+    images = []
+    labels = []
 
-val_datagen = ImageDataGenerator()  # No augmentation for validation/test data
-test_datagen = ImageDataGenerator()
+    for label in os.listdir(directory_path):
+        label_path = os.path.join(directory_path, label)
+        if os.path.isdir(label_path):
+            for image_file in os.listdir(label_path):
+                image_path = os.path.join(label_path, image_file)
+                image = cv2.imread(image_path)
+                # Convert to RGB
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                # Resize image to target shape
+                image = cv2.resize(image, target_shape)
+                images.append(image)
+                labels.append(label)
 
-# Load VGG19 model
-base_model = VGG19(weights='imagenet', include_top=False, input_shape=(1024, 1024, 3))
 
-# Create new model on top of VGG19
-num_classes = ...  # Define the number of classes based on your data
-model = models.Sequential()
+    images_array = np.array(images)
+    labels_array = np.array(labels)
+
+    return images_array, labels_array
+
+
+data_directory = 'C:\\Users\\dheer\\Desktop\\Folder Handler\\Major\\Required Features'
+val_split = 0.2
+test_split = 0.1
+
+
+images_array, labels_array = load_and_preprocess_data(data_directory)
+
+# Split the data using train_test_split
+X_train, X_temp, y_train, y_temp = train_test_split(images_array, labels_array, test_size=val_split + test_split, random_state=42)
+X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=test_split/(val_split + test_split), random_state=42)
+
+
+label_encoder = LabelEncoder()
+y_train_encoded = label_encoder.fit_transform(y_train)
+y_val_encoded = label_encoder.transform(y_val)
+
+
+base_model = VGG19(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+
+
+model = Sequential()
 model.add(base_model)
-model.add(layers.Flatten())
-model.add(layers.Dense(256, activation='relu'))
-model.add(layers.Dropout(0.5))
-model.add(layers.Dense(num_classes, activation='softmax'))
+model.add(Flatten())
+model.add(Dense(512, activation='relu'))
+model.add(Dense(len(label_encoder.classes_), activation='softmax'))  # Output layer
 
-# Compile model
-model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
-# Train the model
-batch_size = 32
-train_generator = train_datagen.flow_from_directory(
-    train_directory,
-    target_size=(1024, 1024),
-    batch_size=batch_size,
-    class_mode='sparse'
-)
+model.compile(optimizer=Adam(), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
-val_generator = val_datagen.flow_from_directory(
-    val_directory,
-    target_size=(1024, 1024),
-    batch_size=batch_size,
-    class_mode='sparse'
-)
 
-test_generator = test_datagen.flow_from_directory(
-    test_directory,
-    target_size=(1024, 1024),
-    batch_size=batch_size,
-    class_mode='sparse',
-    shuffle=False
-)
+model.fit(X_train, y_train_encoded, epochs=10, validation_data=(X_val, y_val_encoded))
 
-# Calculate steps per epoch for training
-steps_per_epoch = train_generator.n // batch_size
-validation_steps = val_generator.n // batch_size
 
-# Train the model
-epochs = 50
-history = model.fit(
-    train_generator,
-    steps_per_epoch=steps_per_epoch,
-    epochs=epochs,
-    validation_data=val_generator,
-    validation_steps=validation_steps
-)
-
-# Evaluate the model on test set
-test_loss, test_acc = model.evaluate(test_generator)
-print(f"Test Accuracy: {test_acc * 100:.2f}%")
-
-# Save the model
-model.save("vgg19_model.h5")
-
-print("Model saved successfully!")
+loss, accuracy = model.evaluate(X_test, label_encoder.transform(y_test))
+print(f"Test Accuracy: {accuracy * 100:.2f}%")
